@@ -73,6 +73,45 @@ Known limitations of this update:
 - Lines typed during a running subroutine are buffered and execute
   afterwards, not discarded.
 
+## v0_01 update — attach mode (drive your own Chrome)
+
+Workaround for sites where logging in inside the bot's fresh Chrome is
+a problem: the bot can now drive a Chrome window *you* launched — with
+your logins — instead of spawning its own.
+
+What's new:
+
+- Auto-attach at startup: the bot probes `127.0.0.1:9222` (override via
+  `CHROME_DEBUG_ADDRESS`) with a std-only TCP check; if your Chrome is
+  running there with `--remote-debugging-port`, it attaches through
+  chromedriver's `debuggerAddress` option (thirtyfour's
+  `ChromeCapabilities::set_debugger_address`). No Chrome running → the
+  usual fresh Chrome, silently; a failed attach → notice + fresh Chrome.
+- Window plumbing on `BrowserSession`: `window_handles`, `current_url`,
+  `switch_to_window`, `windows_with_urls` (enumerates and restores the
+  original window), and `new_tab`.
+- `run twitter-login` is attach-aware: it scans the windows for a
+  twitter.com/x.com URL, switches to it, and confirms the login state —
+  so a profile you've already logged into passes immediately. No
+  Twitter window open → navigate-and-wait as before.
+- New `windows` command: lists handle → URL for every window the bot
+  can see.
+- Quitting the bot detaches from your Chrome and leaves it running
+  (verified empirically; no `leak()` needed).
+- Tests: `windows` parsing unit test; a two-tab integration test for
+  enumeration and switching (which also documents the chromedriver
+  quirk that `new_tab()` doesn't make the new tab current).
+- Docs: README attach-mode section with the one-time shortcut; the
+  architecture walkthrough covers the debuggerAddress mechanism, the
+  TCP probe, and window enumeration.
+
+Known limitations of this update:
+
+- Attach mode drives whichever windows your debug Chrome has open —
+  keep the `--user-data-dir` profile dedicated to the bot.
+- If another program occupies port 9222, the bot prints a notice and
+  falls back to a fresh Chrome.
+
 ## Roadmap for the next version
 
 See [docs/roadmap-v0_02.md](docs/roadmap-v0_02.md).

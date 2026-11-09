@@ -14,6 +14,9 @@ from a terminal.
 
 ## Prerequisites
 
+New machine? Start with [docs/setup.md](docs/setup.md) — the from-scratch
+guide for any OS.
+
 - [Rust](https://www.rust-lang.org/tools/install) (built with 1.99)
 - [Google Chrome](https://www.google.com/chrome/)
 - Internet access on the first run (chromedriver is downloaded
@@ -74,8 +77,10 @@ finishes.
 | --- | --- |
 | `run twitter-login` | Opens Twitter in the browser and waits — polling the page every 2 seconds — until you've logged in. |
 
-`run twitter-login` in detail: navigates to https://twitter.com (which
-redirects to x.com), then blocks the prompt and watches the page until
+`run twitter-login` in detail: in attach mode it first looks for an open
+Twitter window and switches to it (so an existing login is picked up
+immediately); otherwise it navigates to https://twitter.com (which
+redirects to x.com) and blocks the prompt while watching the page until
 the login wall is gone. It gives up after 10 minutes with an error.
 Type Ctrl+C to cancel it and get the prompt back; lines you type while
 it runs are held and executed afterwards. It never sees your
@@ -112,6 +117,50 @@ is the primary reference.
   validates against the registry in `src/subroutines.rs`.
 - The program always closes Chrome cleanly on exit, including Ctrl+C.
 
+## Using your own Chrome (attach mode)
+
+browser_bot can drive a Chrome window *you* launched instead of spawning
+its own — the workaround for sites where you want to log in yourself,
+once, and keep that login. The bot drives your windows and never closes
+your Chrome.
+
+**One-time setup** — a shortcut that launches a dedicated Chrome profile
+with remote debugging enabled:
+
+```
+"C:\Program Files\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9222 --no-first-run --user-data-dir=C:\browser-bot-chrome
+```
+
+Any directory works for `--user-data-dir`, but it must **not** be your
+daily Chrome profile (two Chromes on one profile lock each other out).
+
+**Then, each session:**
+
+1. Launch that shortcut. In the window it opens, log into Twitter once —
+   the dedicated profile remembers the login.
+2. Run browser_bot as usual. At startup it probes port 9222, prints
+   `Attached to your Chrome at ...`, and every command drives your
+   window instead of a fresh one.
+3. `run twitter-login` finds your Twitter window by URL, switches to it,
+   and succeeds immediately because you're already logged in.
+
+If your Chrome isn't running, the bot falls back to its own fresh Chrome
+automatically. The `windows` command lists the windows the bot can
+drive. If you used a different port, set `CHROME_DEBUG_ADDRESS`
+(e.g. `127.0.0.1:9223`).
+
+Caveats:
+
+- Quitting the bot leaves your Chrome open (it detaches cleanly).
+- If something else is listening on port 9222, the bot tries to attach,
+  prints a notice on failure, and falls back to a fresh Chrome.
+- Keep the profile dedicated to the bot; the bot will drive whichever of
+  its windows you point it at.
+
+On macOS and Linux the same flags apply with that platform's Chrome
+binary path — the exact launch commands for all three OSes are in
+[docs/setup.md](docs/setup.md).
+
 ## Using your own chromedriver
 
 If you prefer to run chromedriver yourself (behind a proxy, or pinned to a
@@ -139,6 +188,7 @@ WebDriver protocol on port 9515 by default.
 
 ## Where to learn more
 
+- [docs/setup.md](docs/setup.md) — set this up on a new machine, any OS.
 - [docs/architecture.md](docs/architecture.md) — how the code works,
   written for programmers learning Rust and WebDriver.
 - [CHANGES.md](CHANGES.md) — what changed in v0_01.

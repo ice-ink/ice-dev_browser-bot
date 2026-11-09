@@ -158,20 +158,47 @@ over those endpoints. This is the whole trick of WebDriver: Chrome only
 listens to CDP, chromedriver translates, and any language with an HTTP
 client can automate a browser.
 
-### Connecting: managed vs. external
+### Connecting: attach vs. managed vs. external
 
-`BrowserSession::connect` picks between two modes:
+`BrowserSession::connect` picks between three modes, in order:
 
 1. **`WEBDRIVER_URL` set** → `WebDriver::new(&url, caps)`: plain HTTP
    client to a server you started yourself (e.g. `chromedriver
    --port=9515`). Thirtyfour also has `WebDriver::builder` for tuning
    request timeouts and the user agent.
-2. **Default** → `WebDriver::managed(caps)`: thirtyfour downloads the
+2. **Attach mode** → if a TCP probe finds a listener on the Chrome
+   remote-debugging address (default `127.0.0.1:9222`, override
+   `CHROME_DEBUG_ADDRESS`), the bot attaches to the user's own Chrome:
+   `ChromeCapabilities::set_debugger_address(addr)` sets
+   `goog:chromeOptions.debuggerAddress`, which makes chromedriver attach
+   to an already running browser instead of spawning one. The probe is
+   std-only (`TcpStream::connect_timeout`, 100 ms) and a failed attach
+   falls through with a notice — never an error.
+3. **Default** → `WebDriver::managed(caps)`: thirtyfour downloads the
    chromedriver matching your installed Chrome, spawns it, and kills it
    when the session ends. This is why v0_01 has no install step.
 
-In both cases, `DesiredCapabilities::chrome()` describes the browser we
+Why attach mode exists: a bot-spawned Chrome starts with no cookies, so
+sites like x.com need a fresh login (often blocked for automation
+anyway). The user launches their own Chrome with
+`--remote-debugging-port=9222 --user-data-dir=<dedicated profile>`,
+logs in once, and the bot drives that window — login included. `quit()`
+just detaches; the user's Chrome stays open (verified empirically).
+
+In all cases, `DesiredCapabilities::chrome()` describes the browser we
 want (headless would add a capability argument — see the roadmap).
+
+### Windows and tabs
+
+Chromium lists every tab as a separate window handle. The bot exposes
+`window_handles()`, `current_url()`, `switch_to_window()`, and
+`windows_with_urls()` — the last one enumerates handle→URL pairs by
+switching to each window briefly and restoring the original, so the
+user's visible window is never disturbed. Attach mode depends on this:
+`run twitter-login` scans the handles for a twitter.com/x.com URL and
+switches to it instead of navigating. One quirk worth knowing:
+`new_tab()` does **not** make the new tab current, so code switches to
+the new handle explicitly (the integration test documents this).
 
 ### Implicit waits
 

@@ -20,6 +20,7 @@
 use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
+use thirtyfour::WindowHandle;
 use tokio::time::sleep;
 
 use crate::browser::BrowserSession;
@@ -38,7 +39,7 @@ const LOGIN_TIMEOUT: Duration = Duration::from_secs(600); // 10 minutes
 pub fn registry() -> &'static [(&'static str, &'static str)] {
     &[(
         "twitter-login",
-        "open Twitter and wait for the user to log in",
+        "open Twitter (your Chrome if attached) and wait for the user to log in",
     )]
 }
 
@@ -75,14 +76,34 @@ pub async fn execute(session: &BrowserSession, name: &str) -> Result<()> {
 /// Open Twitter and block until the user has logged in.
 ///
 /// Steps:
-/// 1. Navigate the browser to <https://twitter.com> (Twitter redirects to
-///    x.com). The user logs in by hand in the browser window; this code
-///    never sees credentials.
+/// 1. If one of the open windows is already on Twitter (twitter.com /
+///    x.com) — typically the user's own Chrome in attach mode — switch
+///    to that window instead of navigating, so an existing login is
+///    picked up. Otherwise navigate the current window to
+///    <https://twitter.com> (Twitter redirects to x.com).
 /// 2. Poll the page until login is detected, up to [`LOGIN_TIMEOUT`].
 ///
-/// While this runs, the REPL processes no other instructions. Ctrl+C
-/// cancels just this subroutine (the REPL races it against the signal).
+/// The user logs in by hand in the browser window; this code never sees
+/// credentials. While this runs, the REPL processes no other
+/// instructions. Ctrl+C cancels just this subroutine (the REPL races it
+/// against the signal).
 pub async fn twitter_login(session: &BrowserSession) -> Result<()> {
+    match find_twitter_window(session).await {
+        Ok(Some((handle, url))) => {
+            session.switch_to_window(&handle).await?;
+            println!("attached to your Twitter window ({url}).");
+            wait_for_login(session, LOGIN_TIMEOUT).await?;
+            println!("login confirmed — driving your window.");
+            return Ok(());
+        }
+        Ok(None) => {}
+        Err(err) => {
+            // Window scanning is best-effort; never block the subroutine
+            // on it — fall back to navigating the current window.
+            println!("note: could not scan the browser windows ({err:#}); navigating instead.");
+        }
+    }
+
     println!(
         "opening Twitter — log in in the browser window. \
          The prompt waits for you (Ctrl+C cancels)."
@@ -91,6 +112,28 @@ pub async fn twitter_login(session: &BrowserSession) -> Result<()> {
     wait_for_login(session, LOGIN_TIMEOUT).await?;
     println!("login detected — continuing.");
     Ok(())
+}
+
+/// Find a window whose URL is on Twitter, if any.
+///
+/// Returns the handle *and* URL. The URL is the display value; the
+/// caller switches to the handle (enumeration restores the original
+/// window, so switching is a separate explicit step).
+///
+/// The user's Twitter tab may still be committing its navigation when
+/// the subroutine starts, so the scan retries a few times before
+/// concluding there is no Twitter window.
+async fn find_twitter_window(session: &BrowserSession) -> Result<Option<(WindowHandle, String)>> {
+    println!("looking for an open Twitter window...");
+    for _ in 0..5 {
+        for (handle, url) in session.windows_with_urls().await? {
+            if url.contains("twitter.com") || url.contains("x.com") {
+                return Ok(Some((handle, url)));
+            }
+        }
+        sleep(POLL_INTERVAL).await;
+    }
+    Ok(None)
 }
 
 /// JavaScript probe: true while the page still shows the logged-out
@@ -185,7 +228,7 @@ mod tests {
     fn registry_lists_twitter_login() {
         assert!(registry().contains(&(
             "twitter-login",
-            "open Twitter and wait for the user to log in"
+            "open Twitter (your Chrome if attached) and wait for the user to log in"
         )));
         assert!(!registry().is_empty());
     }

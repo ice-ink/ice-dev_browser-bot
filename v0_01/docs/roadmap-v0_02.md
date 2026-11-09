@@ -4,7 +4,7 @@ Documented when v0_01 finished, as the agent instructions require. The
 theme for v0_02: make the agent more comfortable to drive and a step more
 autonomous.
 
-## Delivered since this roadmap was written (v0_01 update)
+## Delivered since this roadmap was written (v0_01 updates)
 
 The **subroutines category** arrived ahead of v0_02, still in v0_01:
 `run <name>` with the first subroutine `run twitter-login` (open
@@ -13,6 +13,15 @@ Twitter, block the prompt, poll until the user has logged in), plus
 command below) and the first explicit-wait machinery (the poll loop in
 `wait_for_login`). Items 5 (`js` groundwork) and 6 (subroutine side) are
 partially done; the REPL-facing `wait-for` command remains open.
+
+**Attach mode** also arrived in v0_01: the bot auto-attaches to the
+user's own Chrome (launched with `--remote-debugging-port=9222` and a
+dedicated profile) via chromedriver's `debuggerAddress`, with window
+enumeration (`windows` command, `windows_with_urls`) and an
+attach-aware `run twitter-login` that jumps into the user's already
+logged-in Twitter window. This delivers the "own window, own login"
+workflow without a config file — the dedicated profile plus env vars
+still stand in for item 2 until v0_02.
 
 ## Candidate features (priority order)
 

@@ -42,6 +42,9 @@ pub enum Command {
     Screenshot(String),
     /// `wait <seconds>` — pause, e.g. for a slow page load.
     Wait(u64),
+    /// `windows` — list the browser's windows (handle → URL). Useful in
+    /// attach mode to see what the bot can drive.
+    Windows,
     /// `run <name>` — execute a named subroutine (a multi-step flow; see
     /// `help` for the list). Blocks the prompt until it finishes.
     Run(String),
@@ -138,6 +141,7 @@ pub fn parse(line: &str) -> Result<Command, String> {
             }
             Ok(Command::Run(name.clone()))
         }
+        "windows" => Ok(Command::Windows),
         "help" => Ok(Command::Help),
         "quit" | "exit" => Ok(Command::Quit),
         other => Err(format!("unknown command \"{other}\" — `help` lists them")),
@@ -216,6 +220,15 @@ async fn dispatch(session: &mut BrowserSession, line: &str) -> bool {
             println!("waiting {secs}s...");
             session.wait_secs(secs).await;
         }
+        Ok(Command::Windows) => match session.windows_with_urls().await {
+            Ok(windows) => {
+                println!("windows:");
+                for (handle, url) in windows {
+                    println!("  {handle} -> {url}");
+                }
+            }
+            Err(err) => eprintln!("error: {err:#}"),
+        },
         Ok(Command::Run(name)) => {
             // Subroutines can block for minutes (waiting for a human to
             // log in). Race the subroutine against Ctrl+C so the user can
@@ -263,6 +276,7 @@ commands:
   read [css-selector]           print the page text, or one element's text
   screenshot <path.png>         save a PNG of the current viewport
   wait <seconds>                pause (for slow page loads)
+  windows                       list the browser's windows (handle → URL)
   help                          show this list
   quit                          close the browser and exit"
     );
@@ -393,6 +407,11 @@ mod tests {
     fn parse_run_rejects_missing_or_extra_names() {
         assert!(parse("run").unwrap_err().contains("usage"));
         assert!(parse("run twitter-login extra").unwrap_err().contains("one name"));
+    }
+
+    #[test]
+    fn parse_windows() {
+        assert_eq!(parse("windows"), Ok(Command::Windows));
     }
 
     #[test]
