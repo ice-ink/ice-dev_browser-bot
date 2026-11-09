@@ -4,6 +4,16 @@ Documented when v0_01 finished, as the agent instructions require. The
 theme for v0_02: make the agent more comfortable to drive and a step more
 autonomous.
 
+## Delivered since this roadmap was written (v0_01 update)
+
+The **subroutines category** arrived ahead of v0_02, still in v0_01:
+`run <name>` with the first subroutine `run twitter-login` (open
+Twitter, block the prompt, poll until the user has logged in), plus
+`BrowserSession::eval_bool` (the JS-execution groundwork for the `js`
+command below) and the first explicit-wait machinery (the poll loop in
+`wait_for_login`). Items 5 (`js` groundwork) and 6 (subroutine side) are
+partially done; the REPL-facing `wait-for` command remains open.
+
 ## Candidate features (priority order)
 
 1. **Script/batch mode** — run a list of instructions from a file
@@ -26,9 +36,12 @@ autonomous.
    - `title`, `url` — quick page facts.
 6. **Explicit waits** — `wait-for <selector>` (wait until an element
    appears) instead of fixed-duration `wait`, using thirtyfour's
-   wait predicates.
+   wait predicates. (Subroutine-side polling already exists in
+   `wait_for_login`; this item is about exposing it as a REPL command.)
 7. **Error recovery** — retry on stale-element errors after navigation,
    and a clearer message when a click is intercepted.
+8. **More subroutines** — build on the registry: the pattern is one
+   handler + one row in `src/subroutines.rs`.
 
 ## Ideas beyond v0_02
 

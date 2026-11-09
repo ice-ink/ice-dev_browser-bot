@@ -25,7 +25,7 @@ use anyhow::Result;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::signal;
 
-use crate::browser::BrowserSession;
+use crate::{browser::BrowserSession, subroutines};
 
 /// One parsed instruction, ready to be executed against the browser.
 #[derive(Debug, PartialEq)]
@@ -42,6 +42,9 @@ pub enum Command {
     Screenshot(String),
     /// `wait <seconds>` — pause, e.g. for a slow page load.
     Wait(u64),
+    /// `run <name>` — execute a named subroutine (a multi-step flow; see
+    /// `help` for the list). Blocks the prompt until it finishes.
+    Run(String),
     /// `help` — print the command list.
     Help,
     /// `quit` — close the browser and exit.
@@ -128,6 +131,13 @@ pub fn parse(line: &str) -> Result<Command, String> {
                 .map_err(|_| format!("wait needs a whole number of seconds, got \"{raw}\""))?;
             Ok(Command::Wait(secs))
         }
+        "run" => {
+            let name = args.first().ok_or("usage: run <subroutine>")?;
+            if args.len() > 1 {
+                return Err("usage: run <subroutine> — one name only".to_string());
+            }
+            Ok(Command::Run(name.clone()))
+        }
         "help" => Ok(Command::Help),
         "quit" | "exit" => Ok(Command::Quit),
         other => Err(format!("unknown command \"{other}\" — `help` lists them")),
@@ -206,6 +216,20 @@ async fn dispatch(session: &mut BrowserSession, line: &str) -> bool {
             println!("waiting {secs}s...");
             session.wait_secs(secs).await;
         }
+        Ok(Command::Run(name)) => {
+            // Subroutines can block for minutes (waiting for a human to
+            // log in). Race the subroutine against Ctrl+C so the user can
+            // cancel *just* this command without quitting the program.
+            // Dropping the subroutine future mid-WebDriver-call is safe:
+            // the next command simply starts fresh.
+            tokio::select! {
+                result = subroutines::execute(session, &name) => exec(result),
+                _ = signal::ctrl_c() => {
+                    println!();
+                    println!("subroutine cancelled — back to the prompt.");
+                }
+            }
+        }
         Err(message) => eprintln!("error: {message}"),
     }
     true
@@ -225,6 +249,10 @@ fn exec(result: anyhow::Result<()>) {
 }
 
 /// The command reference shown by `help`.
+///
+/// The subroutines section is printed from [`subroutines::registry`]
+/// rather than hard-coded, so adding a subroutine updates the help text
+/// automatically.
 fn print_help() {
     println!(
         "\
@@ -236,10 +264,17 @@ commands:
   screenshot <path.png>         save a PNG of the current viewport
   wait <seconds>                pause (for slow page loads)
   help                          show this list
-  quit                          close the browser and exit
-
-exit anytime with quit, Ctrl+C, or Ctrl+D (Ctrl+Z on Windows)"
+  quit                          close the browser and exit"
     );
+    println!();
+    println!("subroutines:");
+    for (name, description) in subroutines::registry() {
+        println!("  run {name:<26} {description}");
+    }
+    println!();
+    println!("`run` blocks the prompt until the subroutine finishes (Ctrl+C cancels it).");
+    println!();
+    println!("exit anytime with quit, Ctrl+C, or Ctrl+D (Ctrl+Z on Windows)");
 }
 
 #[cfg(test)]
@@ -344,6 +379,20 @@ mod tests {
         assert_eq!(parse("help"), Ok(Command::Help));
         assert_eq!(parse("quit"), Ok(Command::Quit));
         assert_eq!(parse("exit"), Ok(Command::Quit));
+    }
+
+    #[test]
+    fn parse_run() {
+        assert_eq!(
+            parse("run twitter-login"),
+            Ok(Command::Run("twitter-login".into()))
+        );
+    }
+
+    #[test]
+    fn parse_run_rejects_missing_or_extra_names() {
+        assert!(parse("run").unwrap_err().contains("usage"));
+        assert!(parse("run twitter-login extra").unwrap_err().contains("one name"));
     }
 
     #[test]

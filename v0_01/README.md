@@ -64,6 +64,29 @@ Browser closed. Goodbye.
 
 Exit anytime with `quit`, Ctrl+C, or Ctrl+D (Ctrl+Z on Windows).
 
+### Subroutines
+
+Subroutines are multi-step flows, run with `run <name>`. While one runs,
+the prompt is blocked — no other instruction is processed until it
+finishes.
+
+| Command | What it does |
+| --- | --- |
+| `run twitter-login` | Opens Twitter in the browser and waits — polling the page every 2 seconds — until you've logged in. |
+
+`run twitter-login` in detail: navigates to https://twitter.com (which
+redirects to x.com), then blocks the prompt and watches the page until
+the login wall is gone. It gives up after 10 minutes with an error.
+Type Ctrl+C to cancel it and get the prompt back; lines you type while
+it runs are held and executed afterwards. It never sees your
+credentials — you log in by hand in the browser window.
+
+Login detection looks for the logged-out login wall's page elements
+(verified against x.com's markup in Nov 2026). x.com is a third-party
+site that changes its markup; if detection misbehaves, Ctrl+C and the
+timeout are the escapes, and the markers live in
+`src/subroutines.rs` where they're easy to update.
+
 ### Selectors
 
 `click`, `type`, and `read` take CSS selectors: `#id`, `.class`,
@@ -85,6 +108,8 @@ is the primary reference.
   `open` reassembles the line, so `data:` URLs (handy for practicing
   without a server) work as typed:
   `open data:text/html,<input id="f"><p id="o">hi</p>`.
+- Unknown subroutine names print the available list: `run <name>`
+  validates against the registry in `src/subroutines.rs`.
 - The program always closes Chrome cleanly on exit, including Ctrl+C.
 
 ## Using your own chromedriver

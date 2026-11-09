@@ -8,18 +8,22 @@ files it describes.
 ## The big picture
 
 ```
-┌─────────────┐   typed line    ┌──────────────┐  method call  ┌───────────────┐  HTTP  ┌──────────────┐  CDP  ┌────────┐
-│  terminal   │ ──────────────▶ │  src/repl.rs │ ────────────▶ │ src/browser.rs│ ─────▶ │ chromedriver │ ─────▶ │ Chrome │
-└─────────────┘                 └──────────────┘               └───────────────┘        └──────────────┘        └────────┘
+┌─────────────┐ typed line  ┌──────────────┐ run <name>  ┌──────────────────┐ method call ┌───────────────┐ HTTP ┌──────────────┐ CDP ┌────────┐
+│  terminal   │ ──────────▶ │  src/repl.rs │ ──────────▶ │ src/subroutines.rs│ ──────────▶ │ src/browser.rs │ ────▶ │ chromedriver │ ────▶ │ Chrome │
+└─────────────┘             └──────────────┘             └──────────────────┘             └───────────────┘      └──────────────┘      └────────┘
 ```
 
 - **Terminal** — the primary user interface, by design. The user types
   instructions like `open https://example.com` or `click #submit`.
 - **`src/repl.rs`** — reads lines, turns them into `Command` values
-  (parsing), and executes them. Knows nothing about browsers.
+  (parsing), and executes the single-step commands; `run <name>` is
+  dispatched onward. Knows nothing about browsers.
+- **`src/subroutines.rs`** — multi-step flows: navigate, poll the page,
+  wait for a human. Knows nothing about terminals; speaks to the browser
+  only through `BrowserSession`.
 - **`src/browser.rs`** — `BrowserSession`, a thin wrapper around the
   [thirtyfour](https://docs.rs/thirtyfour) crate's `WebDriver`. Knows
-  nothing about terminals.
+  nothing about terminals or task flows.
 - **chromedriver** — a small server program. Receives WebDriver HTTP
   requests and translates them into Chrome DevTools Protocol (CDP)
   commands that Chrome understands. Chrome is the only one who can drive
@@ -32,9 +36,10 @@ possible frontend. A script mode (planned for v0_02) would reuse
 
 ## Crate layout
 
-`src/lib.rs` declares the library (`pub mod browser; pub mod repl;`) and
-`src/main.rs` is the binary. Why split a program this small into a library
-and a binary? Two reasons, both on display in `src/lib.rs`'s doc comment:
+`src/lib.rs` declares the library
+(`pub mod browser; pub mod repl; pub mod subroutines;`) and `src/main.rs`
+is the binary. Why split a program this small into a library and a
+binary? Two reasons, both on display in `src/lib.rs`'s doc comment:
 
 1. **Testability.** Rust integration tests (in `tests/`) can `use`
    library crates but not binaries. The live-browser test in
@@ -211,16 +216,79 @@ async destructors, so thirtyfour's synchronous drop would block the
 executor and swallow errors. Making `quit` take `self` means the compiler
 rejects using a closed session — ownership encodes the lifecycle.
 
+## `src/subroutines.rs` — multi-step flows (`run`)
+
+The single-step commands map to one WebDriver call each. A subroutine is
+a small program: navigate, poll the page, wait for a human. `run
+twitter-login` is the first one.
+
+### The registry pattern
+
+Subroutines are discovered through one table:
+
+```rust
+pub fn registry() -> &'static [(&'static str, &'static str)] {
+    &[("twitter-login", "open Twitter and wait for the user to log in")]
+}
+```
+
+`help` prints the table and `check_known` validates names against it, so
+the help text can never drift from the dispatch in `execute`.
+`check_known` is pure (returns `Result<(), String>`, no I/O) precisely so
+it can be unit-tested without a browser session. Adding a subroutine =
+one handler function + one registry row.
+
+### Waiting for a human: poll until a condition
+
+`wait_for_login` is the roadmap's "explicit wait" idea, hand-rolled:
+every 2 seconds it runs two JavaScript probes in the page (via
+`BrowserSession::eval_bool`, WebDriver's Execute Script endpoint) and
+declares login when two consecutive polls show (a) real page text and
+(b) none of the logged-out markers. The two-poll rule absorbs the
+twitter.com → x.com redirect and loading windows; the text rule stops an
+empty intermediate page from counting as a false positive. A fixed
+deadline turns the loop into a timeout error instead of a hang.
+
+The markers are **negative indicators** — elements that exist on the
+logged-out login wall and disappear after login (verified against the
+live x.com markup in Nov 2026: the wall is a "jetfuel" auth form with
+`input[name="username_or_email"]`, a hidden `input[name="password"]`, a
+Google-button iframe, and a mobile Sign-in link). Negative markers are
+the practical choice because the logged-in page can't be inspected
+without an account; the trade-off is that x.com markup changes are a
+maintenance risk — documented in the README, with Ctrl+C and the
+timeout as the escapes.
+
+### Testability without accounts
+
+`wait_for_login` takes the timeout as an argument and doesn't care which
+page it's looking at — the caller navigates. The integration tests
+exploit that: a `data:` URL whose login input a JS timer removes after
+3 seconds plays the logged-out → logged-in transition, so detection,
+already-logged-in, and timeout are all tested with no network and no
+credentials (`tests/subroutines_integration.rs`). Same trick as the
+main integration test, applied to a time-based flow.
+
+### Cancellation
+
+`run` is dispatched inside a `tokio::select!` that races the subroutine
+against Ctrl+C. Whichever future completes first wins; the other is
+dropped. Dropping the subroutine mid-WebDriver-call is safe — the next
+command starts fresh. Without this race, Ctrl+C during a 10-minute wait
+would only be noticed by the *outer* input loop, which isn't running
+yet.
+
 ## Testing strategy
 
 Three layers, in `cargo test`:
 
-1. **Unit tests** (`repl.rs`, in-module): parsing and tokenizing, no I/O,
-   instant.
-2. **Integration test** (`tests/browser_integration.rs`): starts a real
-   Chrome, opens a `data:` URL (no network needed — the page is the URL),
-   and exercises read/click/type/screenshot/quit through the public
-   library API. It *skips with a notice* when no browser can start, so
+1. **Unit tests** (`repl.rs`, `subroutines.rs`, in-module): parsing,
+   tokenizing, and the subroutine registry — no I/O, instant.
+2. **Integration tests** (`tests/browser_integration.rs`,
+   `tests/subroutines_integration.rs`): start a real Chrome and exercise
+   the public library API against `data:` URLs (no network needed — the
+   page is the URL). The subroutine tests fake the login flow with a JS
+   timer. They *skip with a notice* when no browser can start, so
    `cargo test` passes on machines without Chrome or internet. Skipping
    (rather than failing) a test that depends on an environment is a
    judgment call: document loudly when you make it.

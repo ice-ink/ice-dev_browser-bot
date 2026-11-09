@@ -4,8 +4,8 @@
 //! "click #submit", ...) and this program carries them out in a real Chrome
 //! window. Under the hood every instruction becomes one or more WebDriver
 //! commands: small HTTP requests sent to chromedriver, which relays them to
-//! Chrome. See [`browser`] for the browser plumbing and [`repl`] for the
-//! terminal side.
+//! Chrome. See [`browser`] for the browser plumbing, [`repl`] for the
+//! terminal side, and [`subroutines`] for the multi-step `run` flows.
 //!
 //! ## Crate layout
 //!
@@ -18,3 +18,4 @@
 
 pub mod browser;
 pub mod repl;
+pub mod subroutines;

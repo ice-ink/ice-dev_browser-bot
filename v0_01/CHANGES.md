@@ -38,6 +38,41 @@ Known limitations in v0_01 (see roadmap):
 - No command history or line editing.
 - Fixed-time `wait` rather than condition-based waits.
 
+## v0_01 update — subroutines category (`run`)
+
+Added a subroutines category of commands: multi-step flows invoked with
+`run <name>`, blocking the prompt until they finish. The first
+subroutine is `run twitter-login`.
+
+What's new:
+
+- `src/subroutines.rs` — registry of named subroutines; `help` prints
+  it, `check_known` validates names, `execute` dispatches.
+- `run twitter-login` — opens Twitter (twitter.com → x.com) in the
+  browser and blocks the REPL while polling the page every 2 seconds
+  until the login wall disappears, i.e. until the user has logged in by
+  hand. 10-minute timeout with a friendly error; Ctrl+C cancels just
+  the subroutine. Login markers verified against the live x.com markup
+  (Nov 2026); the agent never sees credentials.
+- `BrowserSession::eval_bool` — Execute Script bridge for DOM probes
+  (the groundwork for a future `js` command).
+- Ctrl+C during `run` cancels the subroutine instead of exiting the
+  program (`tokio::select!` in the dispatcher).
+- Tests: unit tests for `run` parsing and the registry; live-browser
+  integration tests that fake the login transition with a `data:` URL
+  and a JS timer (detection, already-logged-in, and timeout paths) — no
+  account or network needed.
+- Docs: README subroutines section; architecture walkthrough of the
+  registry, the poll-until-condition loop, and cancellation.
+
+Known limitations of this update:
+
+- Login detection relies on x.com's current logged-out markup; if x.com
+  redesigns, the markers in `src/subroutines.rs` need updating (Ctrl+C
+  and the timeout remain the escapes).
+- Lines typed during a running subroutine are buffered and execute
+  afterwards, not discarded.
+
 ## Roadmap for the next version
 
 See [docs/roadmap-v0_02.md](docs/roadmap-v0_02.md).

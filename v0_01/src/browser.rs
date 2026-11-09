@@ -153,6 +153,22 @@ impl BrowserSession {
             .with_context(|| format!("could not read the \"{name}\" property of \"{selector}\""))
     }
 
+    /// Run `script` in the page and return the boolean it returns.
+    ///
+    /// This is WebDriver's "Execute Script" endpoint — the escape hatch
+    /// for anything the typed commands can't express (inspecting the DOM,
+    /// reading computed state). The script must return `true` or `false`;
+    /// wrap an arbitrary value in `!!` (as `!!document.querySelector(...)`)
+    /// to force a real boolean.
+    pub async fn eval_bool(&self, script: &str) -> Result<bool> {
+        self.driver
+            .execute(script, Vec::new())
+            .await
+            .with_context(|| "could not run JavaScript in the page")?
+            .convert::<bool>()
+            .context("the script did not return a boolean (true/false)")
+    }
+
     /// Save a PNG screenshot of the current viewport to `path`.
     pub async fn screenshot(&self, path: &str) -> Result<()> {
         self.driver
