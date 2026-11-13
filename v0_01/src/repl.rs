@@ -45,9 +45,10 @@ pub enum Command {
     /// `windows` — list the browser's windows (handle → URL). Useful in
     /// attach mode to see what the bot can drive.
     Windows,
-    /// `run <name>` — execute a named subroutine (a multi-step flow; see
-    /// `help` for the list). Blocks the prompt until it finishes.
-    Run(String),
+    /// `run <name> [args...]` — execute a named subroutine (a multi-step
+    /// flow; see `help` for the list). Some subroutines take arguments
+    /// (e.g. username/password). Blocks the prompt until it finishes.
+    Run { name: String, args: Vec<String> },
     /// `help` — print the command list.
     Help,
     /// `quit` — close the browser and exit.
@@ -135,11 +136,11 @@ pub fn parse(line: &str) -> Result<Command, String> {
             Ok(Command::Wait(secs))
         }
         "run" => {
-            let name = args.first().ok_or("usage: run <subroutine>")?;
-            if args.len() > 1 {
-                return Err("usage: run <subroutine> — one name only".to_string());
-            }
-            Ok(Command::Run(name.clone()))
+            let name = args.first().ok_or("usage: run <subroutine> [args...]")?;
+            Ok(Command::Run {
+                name: name.clone(),
+                args: args[1..].to_vec(),
+            })
         }
         "windows" => Ok(Command::Windows),
         "help" => Ok(Command::Help),
@@ -229,14 +230,14 @@ async fn dispatch(session: &mut BrowserSession, line: &str) -> bool {
             }
             Err(err) => eprintln!("error: {err:#}"),
         },
-        Ok(Command::Run(name)) => {
+        Ok(Command::Run { name, args }) => {
             // Subroutines can block for minutes (waiting for a human to
-            // log in). Race the subroutine against Ctrl+C so the user can
-            // cancel *just* this command without quitting the program.
-            // Dropping the subroutine future mid-WebDriver-call is safe:
-            // the next command simply starts fresh.
+            // finish a login challenge). Race the subroutine against
+            // Ctrl+C so the user can cancel *just* this command without
+            // quitting the program. Dropping the subroutine future
+            // mid-WebDriver-call is safe: the next command starts fresh.
             tokio::select! {
-                result = subroutines::execute(session, &name) => exec(result),
+                result = subroutines::execute(session, &name, &args) => exec(result),
                 _ = signal::ctrl_c() => {
                     println!();
                     println!("subroutine cancelled — back to the prompt.");
@@ -287,6 +288,7 @@ commands:
     }
     println!();
     println!("`run` blocks the prompt until the subroutine finishes (Ctrl+C cancels it).");
+    println!("Quote passwords with spaces or special characters: run twitter-bookmarks user \"p@ss w\"");
     println!();
     println!("exit anytime with quit, Ctrl+C, or Ctrl+D (Ctrl+Z on Windows)");
 }
@@ -396,17 +398,30 @@ mod tests {
     }
 
     #[test]
-    fn parse_run() {
+    fn parse_run_name_only() {
         assert_eq!(
-            parse("run twitter-login"),
-            Ok(Command::Run("twitter-login".into()))
+            parse("run twitter-bookmarks"),
+            Ok(Command::Run {
+                name: "twitter-bookmarks".into(),
+                args: vec![],
+            })
         );
     }
 
     #[test]
-    fn parse_run_rejects_missing_or_extra_names() {
+    fn parse_run_with_args_and_quoted_password() {
+        assert_eq!(
+            parse(r#"run twitter-bookmarks alice "p@ss word""#),
+            Ok(Command::Run {
+                name: "twitter-bookmarks".into(),
+                args: vec!["alice".into(), "p@ss word".into()],
+            })
+        );
+    }
+
+    #[test]
+    fn parse_run_rejects_missing_name() {
         assert!(parse("run").unwrap_err().contains("usage"));
-        assert!(parse("run twitter-login extra").unwrap_err().contains("one name"));
     }
 
     #[test]

@@ -7,21 +7,22 @@ autonomous.
 ## Delivered since this roadmap was written (v0_01 updates)
 
 The **subroutines category** arrived ahead of v0_02, still in v0_01:
-`run <name>` with the first subroutine `run twitter-login` (open
-Twitter, block the prompt, poll until the user has logged in), plus
-`BrowserSession::eval_bool` (the JS-execution groundwork for the `js`
-command below) and the first explicit-wait machinery (the poll loop in
-`wait_for_login`). Items 5 (`js` groundwork) and 6 (subroutine side) are
-partially done; the REPL-facing `wait-for` command remains open.
+`run <name> [args...]` with `run twitter-bookmarks <username> <password>`
+(form login, optional human challenge wait, navigate to bookmarks), plus
+`BrowserSession::eval_bool` / `clear` and the first explicit-wait
+machinery (`wait_for_login`, `wait_for_bookmarks`). Items 5 (`js`
+groundwork) and 6 (subroutine side) are partially done; the REPL-facing
+`wait-for` command remains open. Bookmark *content* extraction is the
+natural next subroutine once navigation is solid.
 
 **Attach mode** also arrived in v0_01: the bot auto-attaches to the
 user's own Chrome (launched with `--remote-debugging-port=9222` and a
 dedicated profile) via chromedriver's `debuggerAddress`, with window
 enumeration (`windows` command, `windows_with_urls`) and an
-attach-aware `run twitter-login` that jumps into the user's already
-logged-in Twitter window. This delivers the "own window, own login"
-workflow without a config file — the dedicated profile plus env vars
-still stand in for item 2 until v0_02.
+attach-aware `run twitter-bookmarks` that reuses the user's already
+logged-in Twitter window when present. This delivers the "own window,
+own login" workflow without a config file — the dedicated profile plus
+env vars still stand in for item 2 until v0_02.
 
 ## Candidate features (priority order)
 

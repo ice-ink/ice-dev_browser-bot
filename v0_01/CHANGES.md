@@ -42,18 +42,16 @@ Known limitations in v0_01 (see roadmap):
 
 Added a subroutines category of commands: multi-step flows invoked with
 `run <name>`, blocking the prompt until they finish. The first
-subroutine is `run twitter-login`.
+subroutine was `run twitter-login` (later replaced by
+`twitter-bookmarks`).
 
 What's new:
 
 - `src/subroutines.rs` — registry of named subroutines; `help` prints
   it, `check_known` validates names, `execute` dispatches.
-- `run twitter-login` — opens Twitter (twitter.com → x.com) in the
-  browser and blocks the REPL while polling the page every 2 seconds
-  until the login wall disappears, i.e. until the user has logged in by
-  hand. 10-minute timeout with a friendly error; Ctrl+C cancels just
-  the subroutine. Login markers verified against the live x.com markup
-  (Nov 2026); the agent never sees credentials.
+- `run twitter-login` — (superseded by `twitter-bookmarks` below)
+  originally opened Twitter and blocked until the user logged in by
+  hand. Login markers and the poll loop remain the foundation.
 - `BrowserSession::eval_bool` — Execute Script bridge for DOM probes
   (the groundwork for a future `js` command).
 - Ctrl+C during `run` cancels the subroutine instead of exiting the
@@ -90,10 +88,9 @@ What's new:
 - Window plumbing on `BrowserSession`: `window_handles`, `current_url`,
   `switch_to_window`, `windows_with_urls` (enumerates and restores the
   original window), and `new_tab`.
-- `run twitter-login` is attach-aware: it scans the windows for a
-  twitter.com/x.com URL, switches to it, and confirms the login state —
-  so a profile you've already logged into passes immediately. No
-  Twitter window open → navigate-and-wait as before.
+- Twitter subroutines are attach-aware: they scan the windows for a
+  twitter.com/x.com URL, switch to it, and reuse an existing login when
+  present.
 - New `windows` command: lists handle → URL for every window the bot
   can see.
 - Quitting the bot detaches from your Chrome and leaves it running
@@ -111,6 +108,37 @@ Known limitations of this update:
   keep the `--user-data-dir` profile dedicated to the bot.
 - If another program occupies port 9222, the bot prints a notice and
   falls back to a fresh Chrome.
+
+## v0_01 update — `twitter-bookmarks` (credential login + navigate)
+
+Replaced the human-only `twitter-login` wait with a credentialed
+subroutine that logs in and opens bookmarks. Image bookmark extraction
+is still out of scope.
+
+What's new:
+
+- `run twitter-bookmarks <username> <password>` — opens the X login
+  flow (`/i/flow/login`), fills username → Next → password → Log in,
+  waits for login (human completes any 2FA / unusual-login challenge),
+  then opens `/i/bookmarks` and confirms the page loaded. Already-logged-
+  in attach sessions skip the form. The password is never printed.
+- `run` accepts arguments: `Command::Run { name, args }` and
+  `execute(session, name, args)`. Quote passwords with spaces.
+- `BrowserSession::clear` — clear an input before typing (send_keys
+  appends).
+- Login markers updated for the flow's `input[name="text"][autocomplete=
+  "username"]` field; failed steps suggest `screenshot login-fail.png`.
+- Tests: REPL parsing for run-with-args; registry rename; integration
+  coverage for arg validation, multi-step fake form clicks, and
+  bookmarks timeout off-URL. No live x.com account in CI.
+- Docs: README, architecture, this changelog.
+
+Known limitations of this update:
+
+- x.com may still present challenges that need a human in the browser.
+- Fresh managed Chrome is more likely to be challenged than attach mode
+  with a dedicated profile that already has a successful login.
+- Bookmark content is not scraped or saved yet — navigation only.
 
 ## Roadmap for the next version
 

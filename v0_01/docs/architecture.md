@@ -195,8 +195,8 @@ Chromium lists every tab as a separate window handle. The bot exposes
 `windows_with_urls()` — the last one enumerates handle→URL pairs by
 switching to each window briefly and restoring the original, so the
 user's visible window is never disturbed. Attach mode depends on this:
-`run twitter-login` scans the handles for a twitter.com/x.com URL and
-switches to it instead of navigating. One quirk worth knowing:
+`run twitter-bookmarks` scans the handles for a twitter.com/x.com URL
+and switches to it when present. One quirk worth knowing:
 `new_tab()` does **not** make the new tab current, so code switches to
 the new handle explicitly (the integration test documents this).
 
@@ -246,8 +246,9 @@ rejects using a closed session — ownership encodes the lifecycle.
 ## `src/subroutines.rs` — multi-step flows (`run`)
 
 The single-step commands map to one WebDriver call each. A subroutine is
-a small program: navigate, poll the page, wait for a human. `run
-twitter-login` is the first one.
+a small program: navigate, fill a form, poll the page, wait for a human
+challenge. `run twitter-bookmarks <username> <password>` is the first
+credentialed one.
 
 ### The registry pattern
 
@@ -255,7 +256,7 @@ Subroutines are discovered through one table:
 
 ```rust
 pub fn registry() -> &'static [(&'static str, &'static str)] {
-    &[("twitter-login", "open Twitter and wait for the user to log in")]
+    &[("twitter-bookmarks", "<username> <password> — log in and open bookmarks")]
 }
 ```
 
@@ -263,7 +264,22 @@ pub fn registry() -> &'static [(&'static str, &'static str)] {
 the help text can never drift from the dispatch in `execute`.
 `check_known` is pure (returns `Result<(), String>`, no I/O) precisely so
 it can be unit-tested without a browser session. Adding a subroutine =
-one handler function + one registry row.
+one handler function + one registry row. `execute` also takes `args`
+(the tokens after the name); each handler validates its own arity.
+
+### Credentialed login, then bookmarks
+
+`twitter_bookmarks` prefers an already-open X window (attach mode). If
+the page already looks logged in, it skips the form and opens
+`/i/bookmarks`. Otherwise it opens `https://x.com/i/flow/login`, fills
+username → Next → password → Log in via `BrowserSession::clear` /
+`type_text` and a small JS helper that clicks a `[role="button"]` by
+exact label, then reuses `wait_for_login`. Unusual-activity / 2FA
+challenges stay human-in-the-browser: the poll keeps running until the
+logged-out markers disappear or the 10-minute timeout fires. Finally
+`wait_for_bookmarks` requires the URL to contain `/i/bookmarks`, page
+text to be present, and the login wall to be gone. The password is never
+printed. Bookmark *content* extraction is a later step.
 
 ### Waiting for a human: poll until a condition
 
@@ -271,16 +287,16 @@ one handler function + one registry row.
 every 2 seconds it runs two JavaScript probes in the page (via
 `BrowserSession::eval_bool`, WebDriver's Execute Script endpoint) and
 declares login when two consecutive polls show (a) real page text and
-(b) none of the logged-out markers. The two-poll rule absorbs the
-twitter.com → x.com redirect and loading windows; the text rule stops an
-empty intermediate page from counting as a false positive. A fixed
-deadline turns the loop into a timeout error instead of a hang.
+(b) none of the logged-out markers. The two-poll rule absorbs redirects
+and loading windows; the text rule stops an empty intermediate page from
+counting as a false positive. A fixed deadline turns the loop into a
+timeout error instead of a hang.
 
 The markers are **negative indicators** — elements that exist on the
-logged-out login wall and disappear after login (verified against the
-live x.com markup in Nov 2026: the wall is a "jetfuel" auth form with
-`input[name="username_or_email"]`, a hidden `input[name="password"]`, a
-Google-button iframe, and a mobile Sign-in link). Negative markers are
+logged-out login wall / flow and disappear after login (verified against
+the live x.com markup in Nov 2026: username fields including
+`input[name="text"][autocomplete="username"]`, `input[name="password"]`,
+a Google-button iframe, and a mobile Sign-in link). Negative markers are
 the practical choice because the logged-in page can't be inspected
 without an account; the trade-off is that x.com markup changes are a
 maintenance risk — documented in the README, with Ctrl+C and the
@@ -291,10 +307,12 @@ timeout as the escapes.
 `wait_for_login` takes the timeout as an argument and doesn't care which
 page it's looking at — the caller navigates. The integration tests
 exploit that: a `data:` URL whose login input a JS timer removes after
-3 seconds plays the logged-out → logged-in transition, so detection,
-already-logged-in, and timeout are all tested with no network and no
-credentials (`tests/subroutines_integration.rs`). Same trick as the
-main integration test, applied to a time-based flow.
+3 seconds plays the logged-out → logged-in transition, and a second
+`data:` page fakes the multi-step username → password form with JS
+onclick handlers, so detection, form-fill clicking, already-logged-in,
+and timeout paths are all tested with no network and no real credentials
+(`tests/subroutines_integration.rs`). Same trick as the main
+integration test, applied to a time-based flow.
 
 ### Cancellation
 
@@ -314,11 +332,12 @@ Three layers, in `cargo test`:
 2. **Integration tests** (`tests/browser_integration.rs`,
    `tests/subroutines_integration.rs`): start a real Chrome and exercise
    the public library API against `data:` URLs (no network needed — the
-   page is the URL). The subroutine tests fake the login flow with a JS
-   timer. They *skip with a notice* when no browser can start, so
-   `cargo test` passes on machines without Chrome or internet. Skipping
-   (rather than failing) a test that depends on an environment is a
-   judgment call: document loudly when you make it.
+   page is the URL). The subroutine tests fake login detection with a JS
+   timer and the multi-step form with onclick handlers. They *skip with
+   a notice* when no browser can start, so `cargo test` passes on
+   machines without Chrome or internet. Skipping (rather than failing) a
+   test that depends on an environment is a judgment call: document
+   loudly when you make it.
 3. **Manual acceptance** (see README): the REPL itself, driven by a human
    at a real terminal.
 

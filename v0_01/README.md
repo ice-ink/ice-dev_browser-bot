@@ -69,28 +69,39 @@ Exit anytime with `quit`, Ctrl+C, or Ctrl+D (Ctrl+Z on Windows).
 
 ### Subroutines
 
-Subroutines are multi-step flows, run with `run <name>`. While one runs,
-the prompt is blocked — no other instruction is processed until it
-finishes.
+Subroutines are multi-step flows, run with `run <name> [args...]`. While
+one runs, the prompt is blocked — no other instruction is processed until
+it finishes.
 
 | Command | What it does |
 | --- | --- |
-| `run twitter-login` | Opens Twitter in the browser and waits — polling the page every 2 seconds — until you've logged in. |
+| `run twitter-bookmarks <username> <password>` | Logs into X/Twitter with the given credentials (or reuses an existing session) and opens the bookmarks page. |
 
-`run twitter-login` in detail: in attach mode it first looks for an open
-Twitter window and switches to it (so an existing login is picked up
-immediately); otherwise it navigates to https://twitter.com (which
-redirects to x.com) and blocks the prompt while watching the page until
-the login wall is gone. It gives up after 10 minutes with an error.
-Type Ctrl+C to cancel it and get the prompt back; lines you type while
-it runs are held and executed afterwards. It never sees your
-credentials — you log in by hand in the browser window.
+`run twitter-bookmarks` in detail:
 
-Login detection looks for the logged-out login wall's page elements
+1. In attach mode, looks for an open Twitter/X window and switches to it.
+2. If the page already looks logged in, skips the form.
+3. Otherwise opens `https://x.com/i/flow/login`, types the username,
+   clicks Next, types the password, clicks Log in. Quote passwords that
+   contain spaces or special characters:
+   `run twitter-bookmarks alice "p@ss word"`.
+4. Polls every 2 seconds until login is confirmed (10-minute timeout).
+   Unusual-activity / 2FA challenges must be completed by hand in the
+   browser window — the bot keeps waiting.
+5. Navigates to `https://x.com/i/bookmarks` and waits until that page
+   has loaded. Bookmark *content* extraction is not implemented yet.
+
+The password is an argument to the subroutine (visible in the terminal);
+it is never printed by the bot. Prefer attach mode with a dedicated
+Chrome profile after the first successful login so later runs can skip
+the form. Type Ctrl+C to cancel mid-subroutine.
+
+Login detection looks for the logged-out login wall / flow page elements
 (verified against x.com's markup in Nov 2026). x.com is a third-party
-site that changes its markup; if detection misbehaves, Ctrl+C and the
-timeout are the escapes, and the markers live in
-`src/subroutines.rs` where they're easy to update.
+site that changes its markup; if detection or form selectors misbehave,
+Ctrl+C and the timeout are the escapes, and the markers live in
+`src/subroutines.rs` where they're easy to update. A failed step suggests
+`screenshot login-fail.png` so you can see what the page showed.
 
 ### Selectors
 
@@ -141,8 +152,9 @@ daily Chrome profile (two Chromes on one profile lock each other out).
 2. Run browser_bot as usual. At startup it probes port 9222, prints
    `Attached to your Chrome at ...`, and every command drives your
    window instead of a fresh one.
-3. `run twitter-login` finds your Twitter window by URL, switches to it,
-   and succeeds immediately because you're already logged in.
+3. `run twitter-bookmarks <user> <password>` finds your Twitter window
+   by URL, sees you're already logged in, and opens bookmarks without
+   re-typing the password (the args are still required by the command).
 
 If your Chrome isn't running, the bot falls back to its own fresh Chrome
 automatically. The `windows` command lists the windows the bot can

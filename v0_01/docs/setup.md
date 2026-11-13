@@ -143,8 +143,8 @@ Attached to your Chrome at 127.0.0.1:9222 (it stays open when the bot exits).
 ```
 
 3. Try `windows` (lists the windows the bot can drive) and then
-   `run twitter-login` (finds your Twitter window and confirms the
-   login).
+   `run twitter-bookmarks <username> <password>` (reuses your login if
+   present, otherwise fills the form, then opens bookmarks).
 
 If your profile Chrome isn't running, the bot silently falls back to
 spawning its own fresh Chrome — same commands, no login. If a different
@@ -183,7 +183,7 @@ cargo run
 browser-bot> open https://example.com
 browser-bot> read
 browser-bot> windows
-browser-bot> run twitter-login     # needs the profile Chrome, or log in when asked
+browser-bot> run twitter-bookmarks <user> <password>
 browser-bot> quit
 ```
 
@@ -197,7 +197,7 @@ browser-bot> quit
 | Bot says nothing about attaching | Port 9222 isn't listening — launch the profile Chrome first. |
 | `note: something is listening at ... but attaching failed` | Another program owns port 9222. Pick a free port and set `CHROME_DEBUG_ADDRESS`. |
 | `no element matched "..."` | The page didn't show that selector within 10 s. Check the selector, or `wait` first. |
-| `run twitter-login` never detects your login | x.com may have redesigned its login wall. Ctrl+C, then update the markers in `src/subroutines.rs` (see the README note). |
+| `run twitter-bookmarks` never detects login / form fill fails | x.com may have redesigned its login flow. Ctrl+C, `screenshot login-fail.png`, then update the markers/selectors in `src/subroutines.rs` (see the README note). Prefer attach mode after one successful login. |
 
 ## 8. Where the documentation lives
 

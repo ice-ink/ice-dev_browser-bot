@@ -168,6 +168,18 @@ impl BrowserSession {
             .with_context(|| format!("could not type into \"{selector}\""))
     }
 
+    /// Clear the first element matching the selector (e.g. an `<input>`).
+    ///
+    /// Useful before [`BrowserSession::type_text`] when a field may already
+    /// hold text — `send_keys` appends, it does not replace.
+    pub async fn clear(&self, selector: &str) -> Result<()> {
+        self.element(selector)
+            .await?
+            .clear()
+            .await
+            .with_context(|| format!("could not clear \"{selector}\""))
+    }
+
     /// Return the visible text of the whole page — the `<body>` element's
     /// text, which is the closest WebDriver equivalent of "what a human
     /// sees when they read the page".
